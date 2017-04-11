@@ -98,7 +98,11 @@ It can be beneficial to switch to `256` batch size after several epochs.
 ### Cifar10
 
 ```
- pdir=data/checkpoints/cifar10_; mkdir ${pdir}; CUDA_VISIBLE_DEVICES=0 python age.py --dataset cifar10 --image_size 32 --save_dir ${pdir} --lr 0.0002 --nz 128 --netG dcgan32px --netE dcgan32px --nepoch 150 --drop_lr 40  --e_updates '1;KL_fake:1,KL_real:1,match_z:0,match_x:10' --g_updates '2;KL_fake:1,match_z:1000,match_x:0'
+python age.py --dataset cifar10 --image_size 32 --save_dir <save_dir> --lr 0.0002 --nz 128 --netG dcgan32px --netE dcgan32px --nepoch 150 --drop_lr 40  --e_updates '1;KL_fake:1,KL_real:1,match_z:0,match_x:10' --g_updates '2;KL_fake:1,match_z:1000,match_x:0'
 ```
 
-## Citation
+---------------------
+
+Tested with python 2.7.
+
+Implementation is based on pyTorch [DCGAN code](https://github.com/pytorch/examples/tree/master/dcgan).
