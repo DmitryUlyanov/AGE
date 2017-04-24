@@ -106,3 +106,14 @@ python age.py --dataset cifar10 --image_size 32 --save_dir <save_dir> --lr 0.000
 Tested with python 2.7.
 
 Implementation is based on pyTorch [DCGAN code](https://github.com/pytorch/examples/tree/master/dcgan).
+
+# Citation
+
+If you found this code useful please cite our paper
+
+@article{ulyanov2017age,
+    title={Adversarial Generator-Encoder Networks},
+    author={Ulyanov, Dmitry and Vedaldi, Andrea and Lempitsky, Victor},
+    journal={arXiv preprint arXiv:1704.02304},
+    year={2017}
+}
