@@ -2,19 +2,20 @@ from __future__ import print_function
 import argparse
 import torch
 import torch.nn.parallel
-
+import time
 import torch.optim as optim
 import torchvision.utils as vutils
 from torch.autograd import Variable
 from src.utils import *
 import src.losses as losses
+from skimage import color
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', required=True,
                     help='cifar10 | lsun | imagenet | folder | lfw ')
 parser.add_argument('--dataroot', type=str, help='path to dataset')
 parser.add_argument('--workers', type=int,
-                    help='number of data loading workers', default=8)
+                    help='number of data loading workers', default=12)
 parser.add_argument('--batch_size', type=int,
                     default=64, help='batch size')
 parser.add_argument('--image_size', type=int, default=32,
@@ -54,11 +55,21 @@ parser.add_argument('--noise', default='sphere', help='normal|sphere')
 parser.add_argument('--match_z', default='cos', help='none|L1|L2|cos')
 parser.add_argument('--match_x', default='L1', help='none|L1|L2|cos')
 
-parser.add_argument('--drop_lr', default=5, type=int, help='')
+
+parser.add_argument('--th', default=1.05, type=float, help='')
+parser.add_argument('--drop_lr', default=2, type=int, help='')
 parser.add_argument('--save_every', default=50, type=int, help='')
 
+parser.add_argument('--adaptive_advesary_weight', default=False,
+                    dest='adaptive_advesary_weight',
+                    action='store_true', help='manual seed')
+
+parser.add_argument('--feature', dest='feature', action='store_true')
+parser.add_argument('--no-feature', dest='feature', action='store_false')
+
 parser.add_argument('--manual_seed', type=int, default=123, help='manual seed')
-parser.add_argument('--start_epoch', type=int, default=0, help='epoch number to start with')
+parser.add_argument('--start_epoch', type=int, default=0,
+                    help='epoch number to start with')
 
 parser.add_argument(
     '--e_updates', default="1;KL_fake:1,KL_real:1,match_z:0,match_x:0",
@@ -88,7 +99,9 @@ netE = load_E(opt)
 x = torch.FloatTensor(opt.batch_size, opt.nc,
                       opt.image_size, opt.image_size)
 z = torch.FloatTensor(opt.batch_size, opt.nz, 1, 1)
-fixed_z = torch.FloatTensor(opt.batch_size, opt.nz, 1, 1).normal_(0, 1)
+fixed_z = torch.FloatTensor(64, opt.nz, 1, 1).normal_(0, 1)
+x_val = torch.FloatTensor(64, opt.nc,
+                      opt.image_size, opt.image_size)
 
 if opt.noise == 'sphere':
     normalize_(fixed_z)
@@ -96,15 +109,14 @@ if opt.noise == 'sphere':
 if opt.cuda:
     netE.cuda()
     netG.cuda()
-    x = x.cuda()
+    x_val, x = x_val.cuda(), x.cuda()
     z, fixed_z = z.cuda(), fixed_z.cuda()
 
-x = Variable(x)
-z = Variable(z)
-fixed_z = Variable(fixed_z)
+x, x_val   = Variable(x), Variable(x_val)
+z, fixed_z = Variable(z), Variable(fixed_z)
 
 # Setup optimizers
-optimizerD = optim.Adam(netE.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+optimizerE = optim.Adam(netE.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizerG = optim.Adam(netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 
 # Setup criterions
@@ -122,48 +134,76 @@ else:
 real_cpu = torch.FloatTensor()
 
 
+def deprocess(tensor):
+    if 'colorization' in opt.dataset:
+        out = torch.FloatTensor(*tensor.size())
+
+        for i in range(tensor.size(0)):
+            this = tensor[i].transpose(0, 2).contiguous().numpy()
+
+            color.colorconv.lab_ref_white = np.array([0.96422, 1.0, 0.82521])
+
+            out[i] = torch.FloatTensor(
+                color.lab2rgb(this.astype(np.float64))).transpose(0, 2).contiguous()
+        return out
+    else:
+        return tensor / 2 + 0.5
+
+
 def save_images(epoch):
 
     real_cpu.resize_(x.data.size()).copy_(x.data)
 
     # Real samples
     save_path = '%s/real_samples.png' % opt.save_dir
-    vutils.save_image(real_cpu[:64] / 2 + 0.5, save_path)
+    vutils.save_image(deprocess(real_cpu[:64]), save_path)
 
     netG.eval()
-    fake = netG(fixed_z)
+
+    populate_x(x_val, dataloader['val'])
+    fake = netG(conditional(x_val), fixed_z)
 
     # Fake samples
     save_path = '%s/fake_samples_epoch_%03d.png' % (opt.save_dir, epoch)
-    vutils.save_image(fake.data[:64] / 2 + 0.5, save_path)
+    vutils.save_image(deprocess(fake.data[:64].cpu()), save_path)
 
     # Save reconstructions
-    populate_x(x, dataloader['val'])
-    gex = netG(netE(x))
+    gex = netG(conditional(x_val), netE(x_val))
 
-    t = torch.FloatTensor(x.size(0) * 2, x.size(1),
-                          x.size(2), x.size(3))
+    t = torch.FloatTensor(x_val.size(0) * 2, x_val.size(1),
+                          x_val.size(2), x_val.size(3))
 
-    t[0::2] = x.data[:]
+    t[0::2] = x_val.data[:]
     t[1::2] = gex.data[:]
 
     save_path = '%s/reconstructions_epoch_%03d.png' % (opt.save_dir, epoch)
-    grid = vutils.save_image(t[:64] / 2 + 0.5, save_path)
+    vutils.save_image(deprocess(t[:64]), save_path)
 
     netG.train()
+
+start_lr = opt.lr
 
 
 def adjust_lr(epoch):
     if epoch % opt.drop_lr == (opt.drop_lr - 1):
-        opt.lr /= 2
-        for param_group in optimizerD.param_groups:
+        opt.lr *= 0.96
+        for param_group in optimizerE.param_groups:
             param_group['lr'] = opt.lr
 
         for param_group in optimizerG.param_groups:
             param_group['lr'] = opt.lr
 
 
+def conditional(x):
+    if 'colorization' in opt.dataset:
+        return x[:, :1, :, :].clone()
+    else:
+        return None
+
+ideal_KL = get_ideal_KL(opt.nz)
+
 stats = {}
+eee = 100000
 for epoch in range(opt.start_epoch, opt.nepoch):
 
     # Adjust learning rate
@@ -171,9 +211,15 @@ for epoch in range(opt.start_epoch, opt.nepoch):
 
     for i in range(len(dataloader['train'])):
 
+        if i == eee:
+            start = time.time()
         # ---------------------------
         #        Optimize over e
         # ---------------------------
+        for p in netG.parameters():
+            p.requires_grad = False
+        for p in netE.parameters():
+            p.requires_grad = True
 
         for e_iter in range(updates['e']['num_updates']):
             e_losses = []
@@ -190,7 +236,7 @@ for epoch in range(opt.start_epoch, opt.nepoch):
 
             if updates['e']['match_x'] != 0:
                 # g(e(X))
-                gex = netG(ex)
+                gex = netG(conditional(x), ex)
 
                 # match_x: E_x||g(e(x)) - x|| -> min_e
                 err = match(gex, x, opt.match_x)
@@ -206,7 +252,7 @@ for epoch in range(opt.start_epoch, opt.nepoch):
             # Z
             populate_z(z, opt)
             # g(Z)
-            fake = netG(z).detach()
+            fake = netG(conditional(x), z).detach()
             # e(g(Z))
             egz = netE(fake)
 
@@ -226,11 +272,15 @@ for epoch in range(opt.start_epoch, opt.nepoch):
 
             # Update e
             sum(e_losses).backward()
-            optimizerD.step()
+            optimizerE.step()
 
         # ---------------------------
         #        Minimize over g
         # ---------------------------
+        for p in netE.parameters():
+            p.requires_grad = False  # to avoid computation
+        for p in netG.parameters():
+            p.requires_grad = True
 
         for g_iter in range(updates['g']['num_updates']):
             g_losses = []
@@ -238,8 +288,9 @@ for epoch in range(opt.start_epoch, opt.nepoch):
 
             # Z
             populate_z(z, opt)
+            populate_x(x, dataloader['train'])
             # g(Z)
-            fake = netG(z)
+            fake = netG(conditional(x), z)
             # e(g(Z))
             egz = netE(fake)
 
@@ -262,7 +313,7 @@ for epoch in range(opt.start_epoch, opt.nepoch):
                 ex = netE(x)
 
                 # g(e(X))
-                gex = netG(ex)
+                gex = netG(conditional(x), ex)
 
                 # match_x: E_x||g(e(x)) - x|| -> min_g
                 err = match(gex, x, opt.match_x)
@@ -273,15 +324,26 @@ for epoch in range(opt.start_epoch, opt.nepoch):
             sum(g_losses).backward()
             optimizerG.step()
 
-        print('[{epoch}/{nepoch}][{iter}/{niter}] '
-              'KL_real/fake: {KL_real:.3f}/{KL_fake:.3f} '
-              'mean_real/fake: {real_mean:.3f}/{fake_mean:.3f} '
-              'var_real/fake: {real_var:.3f}/{fake_var:.3f} '
-              ''.format(epoch=epoch,
-                        nepoch=opt.nepoch,
-                        iter=i,
-                        niter=len(dataloader['train']),
-                        **stats))
+        print('[{epoch}/{nepoch}][{iter}/{niter}]  '
+              'KL_real/fake: {KL_real:5.3f}/{KL_fake:5.3f}  '
+              'mean_real/fake: {real_mean:6.3f}/{fake_mean:6.3f}  '
+              'var_real/fake: {real_var:.3f}/{fake_var:.3f}  '
+              'adv_weigh {adv_weight}'.format(epoch=epoch,
+                                              nepoch=opt.nepoch,
+                                              iter=('{:%dd}' % len(
+                                                  str(len(dataloader['train']) + 100000))).format(i),
+                                              niter=len(dataloader['train']),
+                                              adv_weight=updates[
+                                                  'e']['KL_fake'],
+                                              **stats))
+        if i >= eee:
+            print((time.time() - start) / (i - eee + 1))
+
+        if opt.adaptive_advesary_weight:
+            updates['e']['KL_fake'] += 0.001 * (opt.lr / start_lr)
+            if stats['KL_real'] > ideal_KL * opt.th or stats['KL_fake'] > ideal_KL * opt.th:
+                updates['e']['KL_fake'] -= 0.02 * (opt.lr / start_lr)
+                updates['e']['KL_fake'] = max(0, updates['e']['KL_fake'])
 
         if i % opt.save_every == 0:
             save_images(epoch)
