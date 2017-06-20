@@ -1,6 +1,6 @@
 You can install `dev` version of pyTorch following this guide.
 
-1) Make sure pyTorch is not installed in your system. Run `python -c "import pytorch"` and check if it produces an import error. If it does not, remove the existing installation with either `conda remove pytorch vision torchvision` or `pip uninstall torchvision torch`.
+1) Make sure pyTorch is not installed in your system. Run `python -c "import torch"` and check if it produces an import error. If it does not, remove the existing installation with either `conda remove pytorch vision torchvision` or `pip uninstall torchvision torch`.
 
 2) Check that you have [`CuDNN`](https://developer.nvidia.com/cudnn) installed (v6.0 works best). If you have custom CuDNN path set environment variables:
 ```
