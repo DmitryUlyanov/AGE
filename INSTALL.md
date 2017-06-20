@@ -14,7 +14,7 @@ LD_LIBRARY_PATH="path/to/cudnn/lib64:$LD_LIBRARY_PATH"
 3) Install pyTorch with:
 ```
 pip  -vvv install --upgrade --force-reinstall https://github.com/pytorch/pytorch/archive/master.zip
-pip  -vvv install --upgrade --force-reinstall https://github.com/pytorch/torchvision/archive/master.zip
+pip  -vvv install --upgrade --force-reinstall https://github.com/pytorch/vision/archive/master.zip
 ```
 
 3) Check everything is OK with:
