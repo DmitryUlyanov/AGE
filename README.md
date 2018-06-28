@@ -112,10 +112,13 @@ Implementation is based on pyTorch [DCGAN code](https://github.com/pytorch/examp
 If you found this code useful please cite our paper
 
 ```
-@article{ulyanov2017age,
-    title={Adversarial Generator-Encoder Networks},
-    author={Ulyanov, Dmitry and Vedaldi, Andrea and Lempitsky, Victor},
-    journal={arXiv preprint arXiv:1704.02304},
-    year={2017}
+@inproceedings{DBLP:conf/aaai/UlyanovVL18,
+  author    = {Dmitry Ulyanov and
+               Andrea Vedaldi and
+               Victor S. Lempitsky},
+  title     = {It Takes (Only) Two: Adversarial Generator-Encoder Networks},
+  booktitle = {{AAAI}},
+  publisher = {{AAAI} Press},
+  year      = {2018}
 }
 ```
