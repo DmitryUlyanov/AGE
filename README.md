@@ -1,6 +1,6 @@
 This repository contains code for the paper
 
-**["Adversarial Generator-Encoder Networks"](http://sites.skoltech.ru/app/data/uploads/sites/25/2017/06/AGE.pdf)** by *Dmitry Ulyanov, Andrea Vedaldi, Victor Lempitsky*.
+**["Adversarial Generator-Encoder Networks"](https://arxiv.org/abs/1704.02304)** (AAAI'18) by *Dmitry Ulyanov, Andrea Vedaldi, Victor Lempitsky*.
 
 ![](data/readme_pics/age.png)
 
