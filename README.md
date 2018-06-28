@@ -8,7 +8,7 @@ This repository contains code for the paper
 
 This is how you can access the models used to generate figures in the paper.
 
-1) First install dev version of pyTorch (see manual [here](INSTALL.md)) and make sure you have `jupyter notebook` ready.
+1) First install dev version of `pytorch 0.2` and make sure you have `jupyter notebook` ready.
 
 2) Then download the models with the script:
 ```
